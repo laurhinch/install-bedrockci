@@ -1,0 +1,19 @@
+name: 'Install BedrockCI'
+description: 'Installs the BedrockCI command-line tool'
+author: 'Lauren Hinchcliffe'
+inputs:
+  version:
+    description: 'Version of the BedrockCI CLI to install'
+    required: false
+    default: 'latest'
+runs:
+  using: 'composite'
+  steps:
+    - shell: bash
+      run: |
+        VERSION="${{ inputs.version }}"
+        if [ "$VERSION" = "latest" ]; then
+          VERSION=$(curl -s https://api.github.com/repos/laurhinch/bedrockci/releases/latest | jq -r .tag_name)
+        fi
+        curl -L "https://github.com/laurhinch/bedrockci/releases/download/$VERSION/bedrockci" -o /usr/local/bin/bedrockci
+        chmod +x /usr/local/bin/bedrockci
