@@ -8,11 +8,31 @@ This GitHub Action installs [BedrockCI](https://github.com/laurhinch/bedrockci) 
 - uses: laurhinch/install-bedrockci@v1
 ```
 
+Pin a release to keep builds reproducible:
+
+```yaml
+- uses: laurhinch/install-bedrockci@v1
+  with:
+    version: cli-v2.1.0
+```
+
+## Inputs
+
+| Name | Default | Description |
+| --- | --- | --- |
+| `version` | `latest` | Release tag of the BedrockCI CLI to install, e.g. `cli-v2.1.0`. |
+| `token` | `${{ github.token }}` | Token used to resolve `latest`. Only reads the public releases API. |
+
+Resolving `latest` costs one GitHub API call. That call is authenticated with
+`github.token` by default, because the anonymous limit is 60 requests per hour
+per IP and GitHub-hosted runners share addresses. If your workflow restricts
+permissions so that no token is available, pin `version` instead.
+
 ## Features
 
 - Installs BedrockCI binary for Linux environments
 - Supports Ubuntu runners (recommended)
-- No configuration required
+- Verifies the download and fails the step if the binary is bad
 
 ## EULA and Privacy Policy
 

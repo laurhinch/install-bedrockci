@@ -3,17 +3,67 @@ description: 'Installs the BedrockCI command-line tool'
 author: 'Lauren Hinchcliffe'
 inputs:
   version:
-    description: 'Version of the BedrockCI CLI to install'
+    description: 'Release tag of the BedrockCI CLI to install, e.g. cli-v2.1.0. Defaults to the latest release.'
     required: false
     default: 'latest'
+  token:
+    description: 'Token used to resolve the latest release. Only reads the public releases API.'
+    required: false
+    default: ${{ github.token }}
 runs:
   using: 'composite'
   steps:
     - shell: bash
+      env:
+        INPUT_VERSION: ${{ inputs.version }}
+        GH_TOKEN: ${{ inputs.token }}
       run: |
-        VERSION="${{ inputs.version }}"
+        set -euo pipefail
+
+        REPO=laurhinch/bedrockci
+        DEST=/usr/local/bin/bedrockci
+
+        TMP=$(mktemp)
+        trap 'rm -f "$TMP"' EXIT
+
+        VERSION="$INPUT_VERSION"
         if [ "$VERSION" = "latest" ]; then
-          VERSION=$(curl -s https://api.github.com/repos/laurhinch/bedrockci/releases/latest | jq -r .tag_name)
+          # Authenticated because the anonymous API limit is 60/hour per IP,
+          # shared across all GitHub-hosted runners. It gets exhausted often.
+          # An empty token means no header at all - sending an empty Bearer
+          # is a 401, where anonymous would have worked.
+          AUTH=()
+          if [ -n "$GH_TOKEN" ]; then
+            AUTH=(-H "Authorization: Bearer $GH_TOKEN")
+          fi
+          API="https://api.github.com/repos/$REPO/releases/latest"
+          if ! curl -fsSL --retry 3 "${AUTH[@]}" -H "Accept: application/vnd.github+json" "$API" -o "$TMP"; then
+            echo "::error::Could not query $REPO releases. Pin a tag with the 'version' input."
+            exit 1
+          fi
+          VERSION=$(jq -r '.tag_name // empty' < "$TMP")
         fi
-        curl -L "https://github.com/laurhinch/bedrockci/releases/download/$VERSION/bedrockci" -o /usr/local/bin/bedrockci
-        chmod +x /usr/local/bin/bedrockci
+
+        if [ -z "$VERSION" ]; then
+          echo "::error::Could not resolve the latest $REPO release. Pin a tag with the 'version' input."
+          exit 1
+        fi
+
+        URL="https://github.com/$REPO/releases/download/$VERSION/bedrockci"
+
+        # -f is the point: without it curl writes the 404 body to the output
+        # file, which then installs cleanly and only fails when something runs
+        # it, as "bedrockci: line 1: Not: command not found".
+        if ! curl -fsSL --retry 3 "$URL" -o "$TMP"; then
+          echo "::error::Failed to download $URL - check that the '$VERSION' release exists."
+          exit 1
+        fi
+
+        if ! file -b "$TMP" | grep -q ELF; then
+          echo "::error::$URL did not return a Linux binary."
+          head -c 200 "$TMP"
+          exit 1
+        fi
+
+        install -m 0755 "$TMP" "$DEST"
+        "$DEST" --version
